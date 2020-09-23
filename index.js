@@ -4,6 +4,7 @@ const cheerio = require("cheerio");
 const inq = require("inquirer");
 const chalk = require("chalk");
 const clipboardy = require("clipboardy");
+const spawn = require("child_process").spawn;
 
 let query = process.argv;
 query.splice(0, 2);
@@ -20,20 +21,41 @@ query = query
 (async function () {
   const browser = p.launch();
   const page = await (await browser).newPage();
+  page.setDefaultNavigationTimeout(0);
+  page.setViewport({ width: 1920, height: 1080 });
   await page.goto("https://torlook.info/" + query);
   let html = await page.content();
-  const index = await promptData(html);
-  await page.click(
-    `div.webResult:nth-child(${index}) > div:nth-child(2) > span:nth-child(3) > span:nth-child(4)`
-  );
+  const { index, length } = await promptData(html);
+
+  if (length !== 1)
+    await page.click(
+      `div.webResult:nth-child(${index}) > div:nth-child(2) > span:nth-child(3) > span:nth-child(4)`
+    );
+  else await page.click(".magneto", { button: "left" });
   console.log(chalk.blueBright("This will take around 10-15 seconds!"));
   await sleep(11000);
+
   html = await page.content();
   clipboardy.writeSync(
     cheerio.load(html)("#seconds_timer > a:nth-child(1)").get("0").attribs.href
   );
   await (await browser).close();
   console.log(chalk.bold.cyanBright("Magnet Copied!! Enjoy Watching."));
+
+  const { choice } = await inq.prompt({
+    message:
+      "Stream it with Peerflix?? (you should have installed peerflix globally! else it will throw error)",
+    choices: ["Yes", "No"],
+    name: "choice",
+    type: "list",
+  });
+  if (choice === "Yes") {
+    const peerProc = spawn("peerflix", [clipboardy.readSync()]);
+    peerProc.stdout.pipe(process.stdout);
+    peerProc.stderr.pipe(process.stderr);
+  } else {
+    process.exit(0);
+  }
 })();
 
 async function promptData(data) {
@@ -83,7 +105,7 @@ async function promptData(data) {
     choices,
   });
 
-  return choices.indexOf(answer) + 4;
+  return { index: choices.indexOf(answer) + 4, length: length - 4 };
 }
 
 function sleep(ms) {
